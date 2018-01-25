@@ -336,6 +336,9 @@ use constant OPERATOR_FIELD_OVERRIDE => {
         _non_changed => \&_bug_interest_ts,
         _default     => \&_invalid_operator,
     },
+    blocked_somewhere => {
+        _default     => \&_blocked_somewhere,
+    },
     triage_owner => {
         _non_changed => \&_triage_owner_nonchanged,
     },
@@ -637,6 +640,14 @@ sub COLUMNS {
         last_visit_ts => 'bug_user_last_visit.last_visit_ts',
         bug_interest_ts => 'bug_interest.modification_time',
         assignee_last_login => 'assignee.last_seen_date',
+        blocked_somewhere =>
+            "(CASE WHEN bugs.bug_id IN"
+               . " (SELECT blocked FROM dependencies JOIN bugs ON (dependencies.dependson = bugs.bug_id)"
+               . " WHERE bug_status IN"
+                 . " (SELECT value FROM bug_status WHERE is_open = 1) GROUP BY blocked)"
+               . " THEN 1"
+               . " ELSE 0"
+               . " END)",
     );
 
     if ($user->id) {
@@ -2818,6 +2829,12 @@ sub _days_elapsed {
 
     $args->{full_field} = "(" . $dbh->sql_to_days('NOW()') . " - " .
                                 $dbh->sql_to_days('bugs.delta_ts') . ")";
+}
+
+sub _blocked_somewhere {
+    my ($self, $args) = @_;
+
+    $args->{full_field} = $self->COLUMNS->{blocked_somewhere}->{name};
 }
 
 sub _assignee_last_login {
