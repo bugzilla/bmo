@@ -570,7 +570,7 @@ sub create {
         # if a packager has modified bz_locations() to contain absolute
         # paths.
         ABSOLUTE => 1,
-        RELATIVE => $ENV{MOD_PERL} ? 0 : 1,
+        RELATIVE => 0,
 
         COMPILE_DIR => bz_locations()->{'template_cache'},
 
@@ -683,15 +683,17 @@ sub create {
                 return $var;
             },
 
-            # Insert `<wbr>` HTML tags to camel and snake case words in the
-            # given string so a long bug summary, for example, will be wrapped
-            # in a preferred manner rather than overflowing or expanding the
-            # parent element. Examples:
+            # Insert `<wbr>` HTML tags to camel and snake case words as well as
+            # words containing dots in the given string so a long bug summary,
+            # for example, will be wrapped in a preferred manner rather than
+            # overflowing or expanding the parent element. This conversion
+            # should exclude existing HTML tags such as links. Examples:
             # * `test<wbr>_switch<wbr>_window<wbr>_content<wbr>.py`
             # * `Test<wbr>Switch<wbr>To<wbr>Window<wbr>Content`
+            # * `<a href="https://www.mozilla.org/">mozilla<wbr>.org</a>`
             wbr => sub {
                 my ($var) = @_;
-                $var =~ s/([a-z])([A-Z\._])/$1<wbr>$2/g;
+                $var =~ s/([a-z])([A-Z\._])(?![^<]*>)/$1<wbr>$2/g;
                 return $var;
             },
 
@@ -1035,7 +1037,7 @@ sub create {
 
     # under mod_perl, use a provider (template loader) that preloads all templates into memory
     my $provider_class
-        = $ENV{MOD_PERL}
+        = BZ_PERSISTENT
         ? 'Bugzilla::Template::PreloadProvider'
         : 'Template::Provider';
 

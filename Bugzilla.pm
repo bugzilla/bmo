@@ -11,6 +11,8 @@ use 5.10.1;
 use strict;
 use warnings;
 
+use Bugzilla::Logging;
+
 # We want any compile errors to get to the browser, if possible.
 BEGIN {
     # This makes sure we're in a CGI.
@@ -20,7 +22,7 @@ BEGIN {
     }
 }
 
-our $VERSION = '20180124.1';
+our $VERSION = '5.9';
 
 use Bugzilla::Auth;
 use Bugzilla::Auth::Persist::Cookie;
@@ -97,6 +99,10 @@ sub init_page {
         binmode STDOUT, ':utf8';
     }
 
+    if (i_am_cgi()) {
+        Log::Log4perl::MDC->put(remote_ip => remote_ip());
+    }
+
     if (${^TAINT}) {
         # Some environment variables are not taint safe
         delete @::ENV{'PATH', 'IFS', 'CDPATH', 'ENV', 'BASH_ENV'};
@@ -110,20 +116,6 @@ sub init_page {
     # during a perl syntax check (perl -c, like we do during the
     # 001compile.t test).
     return if $^C;
-
-    # IIS prints out warnings to the webpage, so ignore them, or log them
-    # to a file if the file exists.
-    if ($ENV{SERVER_SOFTWARE} && $ENV{SERVER_SOFTWARE} =~ /microsoft-iis/i) {
-        $SIG{__WARN__} = sub {
-            my ($msg) = @_;
-            my $datadir = bz_locations()->{'datadir'};
-            if (-w "$datadir/errorlog") {
-                my $warning_log = new IO::File(">>$datadir/errorlog");
-                print $warning_log $msg;
-                $warning_log->close();
-            }
-        };
-    }
 
     my $script = basename($0);
 
@@ -363,7 +355,7 @@ sub login {
     return $class->user if $class->user->id;
 
     # Load all extensions here if not running under mod_perl
-    $class->extensions unless $ENV{MOD_PERL};
+    $class->extensions unless BZ_PERSISTENT;
 
     my $authorizer = new Bugzilla::Auth();
     $type = LOGIN_REQUIRED if $class->cgi->param('GoAheadAndLogIn');
@@ -379,6 +371,10 @@ sub login {
     }
 
     my $authenticated_user = $authorizer->login($type);
+
+    if (i_am_cgi()) {
+        Log::Log4perl::MDC->put(user_id => $authenticated_user->id);
+    }
 
     # At this point, we now know if a real person is logged in.
 
@@ -770,9 +766,8 @@ sub local_timezone {
 # Send messages to syslog for the auditing systems (eg. mozdef) to pick up.
 sub audit {
     my ($class, $message) = @_;
-    openlog('apache', 'cons,pid', 'local4');
-    syslog('notice', '[audit] ' . encode_utf8($message));
-    closelog();
+    state $logger = Log::Log4perl->get_logger("audit");
+    $logger->notice(encode_utf8($message));
 }
 
 # This creates the request cache for non-mod_perl installations.
@@ -887,14 +882,16 @@ sub _cleanup {
     foreach my $signal (qw(TERM PIPE)) {
         $SIG{$signal} = 'DEFAULT' if $SIG{$signal} && $SIG{$signal} eq 'IGNORE';
     }
+
+    Log::Log4perl::MDC->remove();
 }
 
 sub END {
     # Bugzilla.pm cannot compile in mod_perl.pl if this runs.
-    _cleanup() unless $ENV{MOD_PERL};
+    _cleanup() unless BZ_PERSISTENT;
 }
 
-init_page() if !$ENV{MOD_PERL};
+init_page() unless BZ_PERSISTENT;
 
 1;
 

@@ -46,6 +46,7 @@ use Bugzilla::User;
 use Bugzilla::UserAgent qw(detect_platform detect_op_sys);
 use Bugzilla::User::Setting;
 use Bugzilla::Util;
+use Bugzilla::PSGI qw(compile_cgi);
 
 use Date::Parse;
 use DateTime;
@@ -1326,6 +1327,60 @@ sub db_schema_abstract_schema {
             },
         ],
     };
+    $args->{schema}->{secbugs_BugHistory} = {
+        FIELDS => [
+            bugid      => { TYPE => 'BIGINT',      NOTNULL => 1 },
+            changetime => { TYPE => 'NATIVE_DATETIME' },
+            fieldname  => { TYPE => 'VARCHAR(32)', NOTNULL => 1 },
+            new        => { TYPE => 'VARCHAR(255)' },
+            old        => { TYPE => 'VARCHAR(255)' },
+        ],
+    };
+
+    $args->{schema}->{secbugs_Bugs} = {
+        FIELDS => [
+            bugid      => { TYPE => 'BIGINT',  NOTNULL => 1, PRIMARYKEY => 1 },
+            opendate   => { TYPE => 'NATIVE_DATETIME' },
+            closedate  => { TYPE => 'NATIVE_DATETIME', NOTNULL => 1 },
+            severity   => { TYPE => 'VARCHAR(16)' },
+            summary    => { TYPE => 'VARCHAR(255)' },
+            updated    => { TYPE => 'NATIVE_DATETIME' },
+        ],
+    };
+
+    $args->{schema}->{secbugs_Details} = {
+        FIELDS => [
+            did => {
+                TYPE => 'INTSERIAL',
+                NOTNULL => 1,
+                PRIMARYKEY => 1,
+            },
+            sid => {
+                TYPE => 'INT4',
+            },
+            product => {
+                TYPE => 'VARCHAR(255)',
+            },
+            component => {
+                TYPE => 'VARCHAR(255)',
+            },
+            count => { TYPE => 'INT4' },
+            bug_list => { TYPE => 'TEXT' },
+            date => { TYPE => 'NATIVE_DATETIME' },
+            avg_age_days => { TYPE => 'INT4' },
+            med_age_days => { TYPE => 'INT4' },
+        ]
+    };
+
+    $args->{schema}->{secbugs_Stats} = {
+        FIELDS => [
+            sid      => { TYPE => 'INTSERIAL', NOTNULL => 1, PRIMARYKEY => 1 },
+            category => { TYPE => 'VARCHAR(32)' },
+            count    => { TYPE => 'INT4' },
+            date     => { TYPE => 'NATIVE_DATETIME' },
+        ]
+    };
+
 }
 
 sub install_update_db {
@@ -1610,6 +1665,28 @@ sub webservice {
 
     my $dispatch = $args->{dispatch};
     $dispatch->{BMO} = "Bugzilla::Extension::BMO::WebService";
+}
+
+sub psgi_builder {
+    my ($self, $args) = @_;
+    my $mount = $args->{mount};
+
+    my $ses_index = Plack::Builder::builder(sub {
+        my $auth_user = Bugzilla->localconfig->{ses_username};
+        my $auth_pass = Bugzilla->localconfig->{ses_password};
+        Plack::Builder::enable("Auth::Basic", authenticator => sub {
+            my ($username, $password, $env) = @_;
+            return (   $auth_user
+                    && $auth_pass
+                    && $username
+                    && $password
+                    && $username eq $auth_user
+                    && $password eq $auth_pass );
+        });
+        compile_cgi("ses/index.cgi");
+    });
+
+    $mount->{'ses/index.cgi'} = $ses_index;
 }
 
 our $search_content_matches;
@@ -2553,7 +2630,7 @@ sub install_filesystem {
         source  => $contribute->{repository}{url},
         version => BUGZILLA_VERSION,
         commit  => $ENV{CIRCLE_SHA1}      // 'unknown',
-        build   => $ENV{CIRCLE_BUILD_NUM} // 'unknown',
+        build   => $ENV{CIRCLE_BUILD_URL} // 'unknown',
     };
 
     $create_files->{'version.json'} = {

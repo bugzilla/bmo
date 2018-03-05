@@ -18,7 +18,6 @@
 /localconfig.*
 /index.html
 /error_reports
-/.DS_Store
 /template_cache
 /Makefile
 /MYMETA.*
@@ -26,6 +25,7 @@
 /blib
 /Bugzilla-*.*/
 /local
+.DS_Store
 .vagrant/
 version.json
 __lbheartbeat__

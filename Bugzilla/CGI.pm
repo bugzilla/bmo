@@ -34,8 +34,9 @@ BEGIN {
 sub DEFAULT_CSP {
     my %policy = (
         default_src => [ 'self' ],
-        script_src  => [ 'self', 'unsafe-inline', 'unsafe-eval', 'https://www.google-analytics.com' ],
-        child_src   => [ 'self', ],
+        script_src  => [ 'self', 'nonce', 'unsafe-inline', 'https://www.google-analytics.com' ],
+        frame_src   => [ 'none', ],
+        worker_src  => [ 'none', ],
         img_src     => [ 'self', 'https://secure.gravatar.com', 'https://www.google-analytics.com' ],
         style_src   => [ 'self', 'unsafe-inline' ],
         object_src  => [ 'none' ],
@@ -45,7 +46,7 @@ sub DEFAULT_CSP {
             'https://www.google.com/search'
         ],
         frame_ancestors => [ 'none' ],
-        disable         => 1,
+        report_only     => 1,
     );
     if (Bugzilla->params->{github_client_id} && !Bugzilla->user->id) {
         push @{$policy{form_action}}, 'https://github.com/login/oauth/authorize', 'https://github.com/login';
@@ -68,11 +69,8 @@ sub SHOW_BUG_MODAL_CSP {
             # This is from extensions/OrangeFactor/web/js/orange_factor.js
             'https://brasstacks.mozilla.com/orangefactor/api/count',
         ],
-        child_src   => [
-            'self',
-            # This is for the socorro lens addon and is to be removed by Bug 1332016
-            'https://ashughes1.github.io/bugzilla-socorro-lens/chart.htm'
-        ],
+        frame_src   => [ 'self', ],
+        worker_src  => [ 'none', ],
     );
     if (use_attachbase() && $bug_id) {
         my $attach_base = Bugzilla->localconfig->{'attachment_base'};
@@ -114,7 +112,7 @@ sub new {
 
     # Under mod_perl, CGI's global variables get reset on each request,
     # so we need to set them up again every time.
-    $class->_init_bz_cgi_globals() if $ENV{MOD_PERL};
+    $class->_init_bz_cgi_globals() if BZ_PERSISTENT;
 
     my $self = $class->SUPER::new(@args);
 
@@ -194,7 +192,7 @@ sub content_security_policy {
         require Bugzilla::CGI::ContentSecurityPolicy;
         if (%add_params || !$self->{Bugzilla_csp}) {
             my %params = DEFAULT_CSP;
-            delete $params{disable} if %add_params && !$add_params{disable};
+            delete $params{report_only} if %add_params && !$add_params{report_only};
             foreach my $key (keys %add_params) {
                 if (defined $add_params{$key}) {
                     $params{$key} = $add_params{$key};
@@ -374,7 +372,7 @@ sub multipart_init {
     delete $param{'-boundary'};
     $self->{'separator'} = "\r\n--$boundary\r\n";
     $self->{'final_separator'} = "\r\n--$boundary--\r\n";
-    $param{'-type'} = SERVER_PUSH($boundary);
+    $param{'-type'} = CGI::SERVER_PUSH($boundary);
 
     # Note: CGI.pm::multipart_init up to v3.04 explicitly set nph to 0
     # CGI.pm::multipart_init v3.05 explicitly sets nph to 1
@@ -428,6 +426,74 @@ sub close_standby_message {
     }
 }
 
+our $ALLOW_UNSAFE_RESPONSE = 0;
+# responding to text/plain or text/html is safe
+# responding to any request with a referer header is safe
+# some things need to have unsafe responses (attachment.cgi)
+# everything else should get a 403.
+sub _prevent_unsafe_response {
+    my ($self, $headers) = @_;
+    state $safe_content_type_re = qr{
+        ^ (*COMMIT) # COMMIT makes the regex faster
+                    # by preventing back-tracking. see also perldoc pelre.
+        # application/x-javascript, xml, atom+xml, rdf+xml, xml-dtd, and json
+        (?: application/ (?: x(?: -javascript | ml (?: -dtd )? )
+                           | (?: atom | rdf) \+ xml
+                           | json )
+        # text/csv, text/calendar, text/plain, and text/html
+          | text/ (?: c (?: alendar | sv )
+                    | plain
+                    | html )
+        # used for HTTP push responses
+          | multipart/x-mixed-replace)
+    }sx;
+    state $safe_referer_re = do {
+        # Note that urlbase must end with a /.
+        # It almost certainly does, but let's be extra careful.
+        my $urlbase = Bugzilla->localconfig->{urlbase};
+        $urlbase =~ s{/$}{};
+        qr{
+            # Begins with literal urlbase
+            ^ (*COMMIT)
+            \Q$urlbase\E
+            # followed by a slash or end of string
+            (?: /
+              | $ )
+        }sx
+    };
+
+    return if $ALLOW_UNSAFE_RESPONSE;
+
+    if (Bugzilla->usage_mode == USAGE_MODE_BROWSER) {
+        # Safe content types are ones that arn't images.
+        # For now let's assume plain text and html are not valid images.
+        my $content_type         = $headers->{'-type'} // $headers->{'-content_type'} // 'text/html';
+        my $is_safe_content_type = $content_type =~ $safe_content_type_re;
+
+        # Safe referers are ones that begin with the urlbase.
+        my $referer         = $self->referer;
+        my $is_safe_referer = $referer && $referer =~ $safe_referer_re;
+
+        if (!$is_safe_referer && !$is_safe_content_type) {
+            print $self->SUPER::header(-type => 'text/html',  -status => '403 Forbidden');
+            if ($content_type ne 'text/html') {
+                print "Untrusted Referer Header\n";
+                if ($ENV{MOD_PERL}) {
+                    my $r = $self->r;
+                    $r->rflush;
+                    $r->status(200);
+                }
+            }
+            exit;
+        }
+    }
+}
+
+sub should_block_referrer {
+    my ($self) = @_;
+    return length($self->self_url) > 8000;
+}
+
 # Override header so we can add the cookies in
 sub header {
     my $self = shift;
@@ -442,6 +508,8 @@ sub header {
     else {
         %headers = @_;
     }
+
+    $self->_prevent_unsafe_response(\%headers);
 
     if ($self->{'_content_disp'}) {
         $headers{'-content_disposition'} = $self->{'_content_disp'};
@@ -505,15 +573,20 @@ sub header {
     # the MIME type away from the declared Content-Type.
     $headers{'-x_content_type_options'} = 'nosniff';
 
-    my $csp = $self->content_security_policy;
-    $csp->add_cgi_headers(\%headers) if defined $csp && !$csp->disable;
-
     Bugzilla::Hook::process('cgi_headers',
         { cgi => $self, headers => \%headers }
     );
     $self->{_header_done} = 1;
 
     if (Bugzilla->usage_mode == USAGE_MODE_BROWSER) {
+        if ($self->should_block_referrer) {
+            $headers{'-referrer_policy'} = 'origin';
+        }
+        my $csp = $self->content_security_policy;
+        if (defined $csp && !$csp->disable) {
+            $csp->add_cgi_headers(\%headers)
+        }
+
         my @fonts = (
             "skins/standard/fonts/FiraMono-Regular.woff2?v=3.202",
             "skins/standard/fonts/FiraSans-Bold.woff2?v=4.203",
@@ -530,6 +603,8 @@ sub header {
 
 sub param {
     my $self = shift;
+
+    local $CGI::LIST_CONTEXT_WARN = 0;
 
     # When we are just requesting the value of a parameter...
     if (scalar(@_) == 1) {
