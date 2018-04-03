@@ -69,26 +69,25 @@ use constant FIELD_DESCRIPTION_OVERRIDE => {bug_id => 'Bug Created',};
 # relationship / int mappings
 # _should_drop() also needs updating when this is changed
 
-sub _gen_relations() {
-  my @relations;
+sub FILTER_RELATIONSHIPS() {
+  state $relations;
+  return \@$relations if $relations;
   my $index = 1;
-  push @relations, { name => 'Assignee', value => $index++ };
-  push @relations, { name => 'Not Assignee', value => $index++ };
-  push @relations, { name => 'Reporter', value => $index++ };
-  push @relations, { name => 'Not Reporter', value => $index++ };
-  push @relations, { name => 'QA Contact', value => $index++ };
-  push @relations, { name => 'Not QA Contact', value => $index++ };
-  push @relations, { name => "CC'ed", value => $index++ };
-  push @relations, { name => "Not CC'ed", value => $index++ };
-  push @relations, { name => 'Watching', value => $index++ };
-  push @relations, { name => 'Not Watching', value => $index++ };
+  push @$relations, { name => 'Assignee', value => $index++ };
+  push @$relations, { name => 'Not Assignee', value => $index++ };
+  push @$relations, { name => 'Reporter', value => $index++ };
+  push @$relations, { name => 'Not Reporter', value => $index++ };
+  push @$relations, { name => 'QA Contact', value => $index++ };
+  push @$relations, { name => 'Not QA Contact', value => $index++ };
+  push @$relations, { name => "CC'ed", value => $index++ };
+  push @$relations, { name => "Not CC'ed", value => $index++ };
+  push @$relations, { name => 'Watching', value => $index++ };
+  push @$relations, { name => 'Not Watching', value => $index++ };
   if (Bugzilla->have_extension('Review')) {
-    push @relations, { name => 'Mentoring', value => $index++ };
-    push @relations, { name => 'Not Mentoring', value => $index++ };
+    push @$relations, { name => 'Mentoring', value => $index++ };
+    push @$relations, { name => 'Not Mentoring', value => $index++ };
   }
-  return \@relations;
+	return \@$relations;
 }
-
-use constant FILTER_RELATIONSHIPS => _gen_relations();
 
 1;
