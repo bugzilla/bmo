@@ -339,7 +339,7 @@ sub _should_drop {
   $rel_map[8] = !$rel_map[8];
   $rel_map[9] = ($relationship & $bit_watching or $relationship & $bit_compwatch);
   $rel_map[10] = !$rel_map[9];
-  if (Bugzilla->have_extension('Review')) {
+  if (Bugzilla->has_extension('Review')) {
     $rel_map[11] = $bug->is_mentor($user);
     $rel_map[12] = !$rel_map[11];
   }

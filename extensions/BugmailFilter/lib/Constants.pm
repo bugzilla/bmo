@@ -83,7 +83,7 @@ sub FILTER_RELATIONSHIPS() {
   push @$relations, { name => "Not CC'ed", value => $index++ };
   push @$relations, { name => 'Watching', value => $index++ };
   push @$relations, { name => 'Not Watching', value => $index++ };
-  if (Bugzilla->have_extension('Review')) {
+  if (Bugzilla->has_extension('Review')) {
     push @$relations, { name => 'Mentoring', value => $index++ };
     push @$relations, { name => 'Not Mentoring', value => $index++ };
   }
