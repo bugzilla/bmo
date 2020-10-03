@@ -29,6 +29,9 @@ my $oauth_password = 'password123456789!';
 my $referer        = Bugzilla->localconfig->urlbase;
 my $stash          = {};
 
+# Silence "Use of uninitialized value" warning in issue_hash_token
+Bugzilla->request_cache->{remote_ip} = '127.0.0.1';
+
 # Create user to use as OAuth2 resource owner
 my $oauth_user = create_user($oauth_login, $oauth_password);
 
