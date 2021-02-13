@@ -18,16 +18,17 @@ use Bugzilla::Logging;
 use Bugzilla::Constants;
 use Bugzilla::Error;
 use Bugzilla::Hook;
+use Bugzilla::MIME;
 use Bugzilla::Util;
 
 use Date::Format qw(time2str);
 
 use Email::Address;
-use Email::MIME;
 use Encode qw(encode);
 use Encode::MIME::Header;
 use List::MoreUtils qw(none);
 use Try::Tiny;
+use PerlX::Maybe;
 
 # Return::Value 1.666002 pollutes the error log with warnings about this
 # deprecated module. We have to set NO_CLUCK = 1 before loading Email::Send
@@ -51,7 +52,7 @@ sub MessageToMTA {
 
   my $dbh = Bugzilla->dbh;
 
-  my $email = ref $msg ? $msg : Email::MIME->new($msg);
+  my $email = ref $msg ? $msg : Bugzilla::MIME->new($msg);
 
   # Ensure that we are not sending emails too quickly to recipients.
   if (Bugzilla->get_param_with_override('use_mailer_queue')
@@ -98,8 +99,7 @@ sub MessageToMTA {
   $email->header_set('Auto-Submitted', 'auto-generated');
 
   # MIME-Version must be set otherwise some mailsystems ignore the charset
-  $email->header_set('MIME-Version', '1.0')
-    if !$email->header('MIME-Version');
+  $email->header_set('MIME-Version', '1.0') if !$email->header('MIME-Version');
 
   # Encode the headers correctly in quoted-printable
   foreach my $header ($email->header_names) {
@@ -160,16 +160,20 @@ sub MessageToMTA {
   }
 
   if ($method eq "SMTP") {
-    push @args,
-      Host     => Bugzilla->params->{"smtpserver"},
-      username => Bugzilla->params->{"smtp_username"},
-      password => Bugzilla->params->{"smtp_password"},
-      Hello    => $hostname,
-      Debug    => Bugzilla->params->{'smtp_debug'};
+    my ($host, $port) = split(/:/, Bugzilla->params->{'smtpserver'}, 2);
+    $transport = Bugzilla->request_cache->{smtp}
+      ||= Email::Sender::Transport::SMTP::Persistent->new({
+      host          => $host,
+      sasl_username => Bugzilla->params->{'smtp_username'},
+      sasl_password => Bugzilla->params->{'smtp_password'},
+      helo          => $hostname,
+      ssl           => Bugzilla->params->{'smtp_ssl'},
+      debug         => Bugzilla->params->{'smtp_debug'},
+      maybe port    => $port,
+      });
   }
 
-  Bugzilla::Hook::process('mailer_before_send',
-    {email => $email, mailer_args => \@args});
+  Bugzilla::Hook::process('mailer_before_send', {email => $email});
 
   try {
     my $to         = $email->header('to') or die qq{Unable to find "To:" address\n};
@@ -230,11 +234,12 @@ sub MessageToMTA {
     close TESTFILE;
   }
   else {
-    # This is useful for both Sendmail and Qmail, so we put it out here.
+    # This is useful for Sendmail, so we put it out here.
     local $ENV{PATH} = SENDMAIL_PATH;
-    my $mailer = Email::Send->new({mailer => $mailer_class, mailer_args => \@args});
-    my $retval = $mailer->send($email);
-    ThrowCodeError('mail_send_error', {msg => $retval, mail => $email}) if !$retval;
+    eval { sendmail($email, {transport => $transport}) };
+    if ($@) {
+      ThrowCodeError('mail_send_error', {msg => $@->message, mail => $email});
+    }
   }
 
   # insert into email_rates
@@ -263,14 +268,16 @@ sub build_thread_marker {
     $sitespec = "-$2$sitespec";    # Put the port number back in, before the '@'
   }
 
-  my $threadingmarker = "References: <bug-$bug_id-$user_id$sitespec>";
+  my $threadingmarker;
   if ($is_new) {
-    $threadingmarker .= "\nMessage-ID: <bug-$bug_id-$user_id$sitespec>";
+    $threadingmarker = "Message-ID: <bug-$bug_id-$user_id$sitespec>";
   }
   else {
     my $rand_bits = generate_random_password(10);
-    $threadingmarker .= "\nMessage-ID: <bug-$bug_id-$user_id-$rand_bits$sitespec>"
-      . "\nIn-Reply-To: <bug-$bug_id-$user_id$sitespec>";
+    $threadingmarker
+      = "Message-ID: <bug-$bug_id-$user_id-$rand_bits$sitespec>"
+      . "\nIn-Reply-To: <bug-$bug_id-$user_id$sitespec>"
+      . "\nReferences: <bug-$bug_id-$user_id$sitespec>";
   }
 
   return $threadingmarker;
