@@ -110,15 +110,27 @@ use constant ATTACHMENT_MAPPED_RETURNS => {
   mimetype    => 'content_type',
 };
 
-our %api_field_types = (
-  %{{map { $_ => 'double' } Bugzilla::Bug::NUMERIC_COLUMNS()}},
-  %{{map { $_ => 'dateTime' } Bugzilla::Bug::DATE_COLUMNS()}},
-);
+sub api_field_types {
+  state $api_field_types = {
+    %{{map { $_ => 'double' } Bugzilla::Bug::NUMERIC_COLUMNS()}},
+    %{{map { $_ => 'dateTime' } Bugzilla::Bug::DATE_COLUMNS()}},
+  };
+  return $api_field_types;
+}
 
-our %api_field_names = reverse %{Bugzilla::Bug::FIELD_MAP()};
-# This doesn't normally belong in FIELD_MAP, but we do want to translate
-# "bug_group" back into "groups".
-$api_field_names{'bug_group'} = 'groups';
+
+sub api_field_names {
+  state $api_field_names;
+
+  return $api_field_names if $api_field_names;
+  $api_field_names = {reverse %{Bugzilla::Bug::FIELD_MAP()}};
+
+  # This doesn't normally belong in FIELD_MAP, but we do want to translate
+  # "bug_group" back into "groups".
+  $api_field_names->{'bug_group'} = 'groups';
+
+  return $api_field_names;
+}
 
 ######################################################
 # Add aliases here for old method name compatibility #
@@ -838,7 +850,7 @@ sub update {
     my %changes = %{$all_changes{$bug->id}};
     foreach my $field (keys %changes) {
       my $change = $changes{$field};
-      my $api_field = $api_field_names{$field} || $field;
+      my $api_field = api_field_names->{$field} || $field;
 
       # We normalize undef to an empty string, so that the API
       # stays consistent for things like Deadline that can become
@@ -1755,8 +1767,8 @@ sub _changeset_to_hash {
 
   foreach my $change (@{$changeset->{changes}}) {
     my $field_name     = delete $change->{fieldname};
-    my $api_field_type = $api_field_types{$field_name} || 'string';
-    my $api_field_name = $api_field_names{$field_name} || $field_name;
+    my $api_field_type = api_field_types->{$field_name} || 'string';
+    my $api_field_name = api_field_names->{$field_name} || $field_name;
     my $attach_id      = delete $change->{attachid};
     my $comment        = delete $change->{comment};
 
