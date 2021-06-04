@@ -2790,6 +2790,7 @@ sub app_startup {
   my $app = $args->{app};
   my $r   = $app->routes;
 
+  delete $app->static->extra->{'favicon.ico'};
   $r->get(
     '/favicon.ico' => sub {
       my $c = shift;
