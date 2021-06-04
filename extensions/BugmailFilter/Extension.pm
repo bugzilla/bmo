@@ -26,7 +26,7 @@ use Bugzilla::Product;
 use Bugzilla::User;
 use Bugzilla::Util qw(template_var);
 use Encode;
-use List::MoreUtils qw(uniq);
+use List::MoreUtils qw(any uniq);
 use Sys::Syslog qw(:DEFAULT);
 
 #
@@ -124,10 +124,13 @@ sub user_preferences {
     delete $fields{$field};
   }
 
-  # remove all tracking flag fields.  these change too frequently to be of
-  # value, so they only add noise to the list.
-  foreach my $field (Bugzilla->tracking_flag_names) {
-    delete $fields{$field};
+  # remove all tracking flag fields (from the TrackingFlags extension).
+  # these change too frequently to be of value,
+  # so they only add noise to the list.
+  if (Bugzilla->has_extension('TrackingFlags')) {
+    foreach my $field (Bugzilla->tracking_flag_names) {
+      delete $fields{$field};
+    }
   }
 
   # add tracking flag types instead
@@ -182,22 +185,24 @@ sub user_preferences {
   }
 
   # build a list of tracking-flags, grouped by type
-  require Bugzilla::Extension::TrackingFlags::Constants;
-  require Bugzilla::Extension::TrackingFlags::Flag;
-  my %flag_types = map { $_->{name} => $_->{description} }
-    @{Bugzilla::Extension::TrackingFlags::Constants::FLAG_TYPES()};
-  my %tracking_flags_by_type;
-  foreach my $flag (Bugzilla::Extension::TrackingFlags::Flag->get_all) {
-    my $type = $flag_types{$flag->flag_type};
-    $tracking_flags_by_type{$type} //= [];
-    push @{$tracking_flags_by_type{$type}}, $flag;
+  if (Bugzilla->has_extension('TrackingFlags')) {
+    require Bugzilla::Extension::TrackingFlags::Constants;
+    require Bugzilla::Extension::TrackingFlags::Flag;
+    my %flag_types = map { $_->{name} => $_->{description} }
+      @{Bugzilla::Extension::TrackingFlags::Constants::FLAG_TYPES()};
+    my %tracking_flags_by_type;
+    foreach my $flag (Bugzilla::Extension::TrackingFlags::Flag->get_all) {
+      my $type = $flag_types{$flag->flag_type};
+      $tracking_flags_by_type{$type} //= [];
+      push @{$tracking_flags_by_type{$type}}, $flag;
+    }
+    my @tracking_flags_by_type;
+    foreach my $type (sort keys %tracking_flags_by_type) {
+      push @tracking_flags_by_type,
+        {name => $type, flags => $tracking_flags_by_type{$type},};
+    }
+    $vars->{tracking_flags_by_type} = \@tracking_flags_by_type;
   }
-  my @tracking_flags_by_type;
-  foreach my $type (sort keys %tracking_flags_by_type) {
-    push @tracking_flags_by_type,
-      {name => $type, flags => $tracking_flags_by_type{$type},};
-  }
-  $vars->{tracking_flags_by_type} = \@tracking_flags_by_type;
 
   ${$args->{handled}} = 1;
 }
@@ -287,13 +292,15 @@ sub user_wants_mail {
   }
 
   # set filter_field on tracking flags to tracking.$type
-  require Bugzilla::Extension::TrackingFlags::Flag;
-  my @tracking_flags = Bugzilla->tracking_flags;
-  foreach my $field (@$fields) {
-    next unless my $field_name = $field->{field_name};
-    foreach my $tracking_flag (@tracking_flags) {
-      if ($field_name eq $tracking_flag->name) {
-        $field->{filter_field} = 'tracking.' . $tracking_flag->flag_type;
+  if (Bugzilla->has_extension('TrackingFlags')) {
+    require Bugzilla::Extension::TrackingFlags::Flag;
+    my @tracking_flags = Bugzilla->tracking_flags;
+    foreach my $field (@$fields) {
+      next unless my $field_name = $field->{field_name};
+      foreach my $tracking_flag (@tracking_flags) {
+        if ($field_name eq $tracking_flag->name) {
+          $field->{filter_field} = 'tracking.' . $tracking_flag->flag_type;
+        }
       }
     }
   }

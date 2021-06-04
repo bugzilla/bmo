@@ -12,6 +12,7 @@ use strict;
 use warnings;
 
 use Bugzilla::Extension::BugmailFilter::Constants;
+use List::MoreUtils qw(any);
 
 # object
 
@@ -40,17 +41,19 @@ sub fake_fields {
 sub tracking_flag_fields {
   my $cache = Bugzilla->request_cache->{bugmail_filter};
   if (!$cache->{tracking_flag_fields}) {
-    require Bugzilla::Extension::TrackingFlags::Constants;
     my @fields;
-    my $tracking_types
-      = Bugzilla::Extension::TrackingFlags::Constants::FLAG_TYPES();
-    foreach my $tracking_type (@$tracking_types) {
-      push @fields,
-        Bugzilla::Extension::BugmailFilter::FakeField->new({
-        name        => 'tracking.' . $tracking_type->{name},
-        description => $tracking_type->{description},
-        sortkey     => $tracking_type->{sortkey},
-        });
+    if (Bugzilla->has_extension('TrackingFlags')) {
+      require Bugzilla::Extension::TrackingFlags::Constants;
+      my $tracking_types
+        = Bugzilla::Extension::TrackingFlags::Constants::FLAG_TYPES();
+      foreach my $tracking_type (@$tracking_types) {
+        push @fields,
+          Bugzilla::Extension::BugmailFilter::FakeField->new({
+          name        => 'tracking.' . $tracking_type->{name},
+          description => $tracking_type->{description},
+          sortkey     => $tracking_type->{sortkey},
+          });
+      }
     }
     $cache->{tracking_flag_fields} = \@fields;
   }
