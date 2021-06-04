@@ -122,9 +122,19 @@ sub template_inner {
     ||= Bugzilla::Template->create(%options);
 }
 
+our $in_extensions = 0;
+
 sub extensions {
   state $extensions;
   return $extensions if $extensions;
+
+  # Guard against extensions querying the extension list during initialization
+  # (through this method or has_extension).
+  # The extension list is not fully populated at that point,
+  # so the results would not be meaningful.
+  die "Recursive attempt to load/query extensions" if $in_extensions > 0;
+  local $in_extensions = $in_extensions + 1;
+
   my $extension_packages = Bugzilla::Extension->load_all();
   $extensions = [];
   foreach my $package (@$extension_packages) {
@@ -133,6 +143,16 @@ sub extensions {
     }
   }
   return $extensions;
+}
+
+sub has_extension {
+  my ($class, $name) = @_;
+  my $cache = $class->request_cache;
+  if (!$cache->{extensions_hash}) {
+    my %extensions = map { $_->NAME => 1 } @{Bugzilla->extensions};
+    $cache->{extensions_hash} = \%extensions;
+  }
+  return exists $cache->{extensions_hash}{$name};
 }
 
 sub cgi {
