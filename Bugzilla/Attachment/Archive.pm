@@ -80,7 +80,8 @@ sub _build_input_fh {
     croak "I will not read and write a file at the same time";
   }
   my $file = $self->file;
-  return IO::File->new($self->file, '<:bytes') or die "cannot read $file: $!";
+  my $f = IO::File->new($self->file, '<:bytes') or die "cannot read $file: $!";
+  return $f;
 }
 
 sub _build_output_fh {
@@ -92,7 +93,8 @@ sub _build_output_fh {
   if (-e $file) {
     croak "I will not overwrite a file (file $file already exists)";
   }
-  return IO::File->new($file, '>:bytes') or die "cannot write $file: $!";
+  my $f = IO::File->new($file, '>:bytes') or die "cannot write $file: $!";
+  return $f;
 }
 
 sub _read_header {

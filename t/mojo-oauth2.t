@@ -24,12 +24,13 @@ use Bugzilla::Test::Util qw(create_user create_oauth_client);
 use Test2::V0;
 use Test::Mojo;
 
-skip_all("these don't work without more scaffolding");
-
 my $oauth_login    = 'oauth@mozilla.bugs';
 my $oauth_password = 'password123456789!';
 my $referer        = Bugzilla->localconfig->urlbase;
 my $stash          = {};
+
+# Silence "Use of uninitialized value" warning in issue_hash_token
+Bugzilla->request_cache->{remote_ip} = '127.0.0.1';
 
 # Create user to use as OAuth2 resource owner
 my $oauth_user = create_user($oauth_login, $oauth_password);
