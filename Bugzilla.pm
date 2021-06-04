@@ -45,6 +45,7 @@ use File::Spec::Functions;
 use Safe;
 use JSON::XS qw(decode_json);
 use Scope::Guard;
+use URI;
 
 use parent qw(Bugzilla::CPAN);
 
@@ -161,6 +162,12 @@ sub localconfig {
     ||= Bugzilla::Localconfig->new(read_localconfig());
 }
 
+sub urlbase {
+  my ($class) = @_;
+
+  # Since this could be modified, we have to return a new one every time.
+  return URI->new($class->localconfig->{urlbase});
+}
 
 sub params {
   return request_cache->{params} ||= Bugzilla::Config::read_param_file();

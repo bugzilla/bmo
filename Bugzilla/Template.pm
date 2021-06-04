@@ -985,7 +985,7 @@ sub create {
       'sudoer' => sub { return Bugzilla->sudoer; },
 
       # Allow templates to access the "correct" URLBase value
-      'urlbase' => sub { return Bugzilla->localconfig->urlbase; },
+      'urlbase' => sub { Bugzilla->urlbase },
 
       # Allow templates to get the absolute path of the URLBase value
       'basepath' => sub { return Bugzilla->localconfig->basepath; },
