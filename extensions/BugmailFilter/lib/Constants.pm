@@ -67,21 +67,27 @@ use constant IGNORE_FIELDS => qw(
 use constant FIELD_DESCRIPTION_OVERRIDE => {bug_id => 'Bug Created',};
 
 # relationship / int mappings
-# _should_drop() also needs updating when this const is changed
+# _should_drop() also needs updating when this is changed
 
-use constant FILTER_RELATIONSHIPS => [
-  {name => 'Assignee',       value => 1,},
-  {name => 'Not Assignee',   value => 2,},
-  {name => 'Reporter',       value => 3,},
-  {name => 'Not Reporter',   value => 4,},
-  {name => 'QA Contact',     value => 5,},
-  {name => 'Not QA Contact', value => 6,},
-  {name => "CC'ed",          value => 7,},
-  {name => "Not CC'ed",      value => 8,},
-  {name => 'Watching',       value => 9,},
-  {name => 'Not Watching',   value => 10,},
-  {name => 'Mentoring',      value => 11,},
-  {name => 'Not Mentoring',  value => 12,},
-];
+sub FILTER_RELATIONSHIPS() {
+  state $relations;
+  return \@$relations if $relations;
+  my $index = 1;
+  push @$relations, { name => 'Assignee', value => $index++ };
+  push @$relations, { name => 'Not Assignee', value => $index++ };
+  push @$relations, { name => 'Reporter', value => $index++ };
+  push @$relations, { name => 'Not Reporter', value => $index++ };
+  push @$relations, { name => 'QA Contact', value => $index++ };
+  push @$relations, { name => 'Not QA Contact', value => $index++ };
+  push @$relations, { name => "CC'ed", value => $index++ };
+  push @$relations, { name => "Not CC'ed", value => $index++ };
+  push @$relations, { name => 'Watching', value => $index++ };
+  push @$relations, { name => 'Not Watching', value => $index++ };
+  if (Bugzilla->has_extension('Review')) {
+    push @$relations, { name => 'Mentoring', value => $index++ };
+    push @$relations, { name => 'Not Mentoring', value => $index++ };
+  }
+	return \@$relations;
+}
 
 1;

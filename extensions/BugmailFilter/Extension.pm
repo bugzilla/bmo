@@ -339,8 +339,10 @@ sub _should_drop {
   $rel_map[8] = !$rel_map[8];
   $rel_map[9] = ($relationship & $bit_watching or $relationship & $bit_compwatch);
   $rel_map[10] = !$rel_map[9];
-  $rel_map[11] = $bug->is_mentor($user);
-  $rel_map[12] = !$rel_map[11];
+  if (Bugzilla->has_extension('Review')) {
+    $rel_map[11] = $bug->is_mentor($user);
+    $rel_map[12] = !$rel_map[11];
+  }
   foreach my $bool (@rel_map) {
     $bool = $bool ? 1 : 0;
   }
