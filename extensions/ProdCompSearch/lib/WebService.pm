@@ -117,18 +117,6 @@ sub prod_comp_search {
   }
   return {products => []} if !scalar @terms;
 
-  # To help Mozilla staff file BMO administration bugs into the right
-  # component, sort BMO first when searching for 'bugzilla'
-  if (
-       $search =~ /bugzilla/i
-    && $search !~ /^bugzilla\s*::/i
-    && ( $user->in_group('mozilla-corporation')
-      || $user->in_group('mozilla-foundation'))
-    )
-  {
-    unshift @order, "products.name != 'bugzilla.mozilla.org'";
-  }
-
   my $components = $dbh->selectall_arrayref("
         SELECT products.name AS product,
                components.name AS component
